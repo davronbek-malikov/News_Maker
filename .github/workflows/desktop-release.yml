@@ -1,0 +1,51 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create build environment file
+        shell: pwsh
+        run: |
+          @"
+          NEXT_PUBLIC_INSFORGE_URL=${{ secrets.NEXT_PUBLIC_INSFORGE_URL }}
+          NEXT_PUBLIC_INSFORGE_ANON_KEY=${{ secrets.NEXT_PUBLIC_INSFORGE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL=https://752e5skn.insforge.site
+          NEXT_PUBLIC_INSFORGE_DASHBOARD_URL=https://insforge.dev/dashboard/project/09edd8a4-b86f-4ca5-9205-8b82ba4e95db?route=/dashboard/database/tables
+          "@ | Set-Content -Path .env.local
+
+      - name: Build Windows installer
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist:win
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/*.exe
+            release/*.yml
+            release/*.blockmap
