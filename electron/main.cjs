@@ -197,6 +197,128 @@ ipcMain.handle("install-update", async () => {
   return { ok: false, message: "Update installation was postponed." };
 });
 
+ipcMain.handle("generate-telegram-post", async (_event, payload) => {
+  const apiKey = payload?.apiKey?.trim();
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      message: "Add your OpenAI API key in the AI panel first.",
+    };
+  }
+
+  const prompt = buildTelegramPrompt(payload);
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-5-mini",
+        instructions:
+          "You help create Telegram channel posts for a news workflow. Return concise, publish-ready results that are factual in tone, cleanly written, and easy to edit. Always return valid JSON that matches the requested schema.",
+        input: prompt,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "telegram_post_result",
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                title: { type: "string" },
+                content: { type: "string" },
+                tags: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                notes: { type: "string" },
+              },
+              required: ["title", "content", "tags", "notes"],
+            },
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        ok: false,
+        message: `OpenAI request failed: ${response.status} ${errorText}`,
+      };
+    }
+
+    const json = await response.json();
+    const contentText =
+      json?.output?.[0]?.content?.find((item) => item.type === "output_text")?.text ??
+      json?.output_text;
+
+    if (!contentText) {
+      return {
+        ok: false,
+        message: "The AI response did not include usable text output.",
+      };
+    }
+
+    const parsed = JSON.parse(contentText);
+    return {
+      ok: true,
+      message:
+        payload.mode === "generate"
+          ? "Telegram draft generated."
+          : "Telegram draft polished.",
+      data: {
+        title: parsed.title ?? "",
+        content: parsed.content ?? "",
+        tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+        notes: parsed.notes ?? "",
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Unknown AI error.",
+    };
+  }
+});
+
+function buildTelegramPrompt(payload) {
+  const tagText = Array.isArray(payload.tags) && payload.tags.length
+    ? payload.tags.join(", ")
+    : "none";
+
+  if (payload.mode === "polish") {
+    return [
+      "Task: improve an existing Telegram news post draft.",
+      `Language: ${payload.language}`,
+      `Tone: ${payload.tone}`,
+      `Audience: ${payload.audience}`,
+      `Current title: ${payload.title || "(empty)"}`,
+      `Current content: ${payload.content || "(empty)"}`,
+      `Existing tags: ${tagText}`,
+      `Important points to preserve: ${payload.keyPoints || "none"}`,
+      "Fix grammar mistakes, improve readability, tighten structure, and keep the post suitable for Telegram.",
+      "Return improved title, improved content, up to 5 tags, and short notes about what changed.",
+    ].join("\n");
+  }
+
+  return [
+    "Task: generate a Telegram news post draft.",
+    `Topic: ${payload.topic || payload.title || "General news update"}`,
+    `Language: ${payload.language}`,
+    `Tone: ${payload.tone}`,
+    `Audience: ${payload.audience}`,
+    `Key points to include: ${payload.keyPoints || "Use your best judgment."}`,
+    `Optional starting title: ${payload.title || "(none)"}`,
+    `Optional existing notes/content: ${payload.content || "(none)"}`,
+    "Create a strong title, a clear Telegram-ready body, up to 5 useful tags, and a short note explaining the angle.",
+  ].join("\n");
+}
+
 app.whenReady().then(async () => {
   configureAutoUpdater();
   await createWindow();
