@@ -1,14 +1,174 @@
-import { useState } from 'react';
-import { Save, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Save, Plus, Trash2, Download, RefreshCw, Sparkles, ArrowUpCircle } from 'lucide-react';
 
 export function Settings() {
   const [automationMode, setAutomationMode] = useState('ai-approval');
   const [sources, setSources] = useState(['Reuters', 'TechCrunch', 'The Verge']);
   const [newSource, setNewSource] = useState('');
+  const [desktopInfo, setDesktopInfo] = useState<DesktopAppInfo | null>(null);
+  const [updateMessage, setUpdateMessage] = useState('');
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    if (!window.newmakerDesktop) {
+      return;
+    }
+
+    let unsubscribe = () => {};
+
+    window.newmakerDesktop.getAppInfo().then((info) => {
+      setDesktopInfo(info);
+    });
+
+    unsubscribe = window.newmakerDesktop.onUpdateStatus((payload) => {
+      setDesktopInfo((current) =>
+        current
+          ? { ...current, updateState: payload, version: current.version }
+          : {
+              isDesktop: true,
+              isPackaged: false,
+              version: payload.version,
+              updateState: payload,
+            }
+      );
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  async function checkUpdates() {
+    if (!window.newmakerDesktop) return;
+    setWorking(true);
+    const result = await window.newmakerDesktop.checkForUpdates();
+    setUpdateMessage(result.message);
+    if (result.updateState) {
+      setDesktopInfo((current) => (current ? { ...current, updateState: result.updateState! } : current));
+    }
+    setWorking(false);
+  }
+
+  async function downloadUpdate() {
+    if (!window.newmakerDesktop) return;
+    setWorking(true);
+    const result = await window.newmakerDesktop.downloadUpdate();
+    setUpdateMessage(result.message);
+    if (result.updateState) {
+      setDesktopInfo((current) => (current ? { ...current, updateState: result.updateState! } : current));
+    }
+    setWorking(false);
+  }
+
+  async function installUpdate() {
+    if (!window.newmakerDesktop) return;
+    setWorking(true);
+    const result = await window.newmakerDesktop.installUpdate();
+    setUpdateMessage(result.message);
+    setWorking(false);
+  }
+
+  const releaseNotes = desktopInfo?.updateState.releaseNotes?.trim();
 
   return (
     <div className="max-w-4xl space-y-8">
-      {/* Automation Settings */}
+      <section>
+        <h2 className="text-xl font-semibold mb-4">App Updates</h2>
+        <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-primary">
+                <ArrowUpCircle className="w-5 h-5" />
+                <span className="font-medium">Desktop release updater</span>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This is the in-app place to test updates without deleting and reinstalling each time.
+                When a new GitHub Release exists, you can read what changed, download it, and install it here.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3 text-sm">
+                <span className="rounded-full bg-muted px-3 py-1.5">
+                  Current version: {desktopInfo?.version ?? 'web mode'}
+                </span>
+                <span className="rounded-full bg-muted px-3 py-1.5">
+                  Mode: {desktopInfo?.isPackaged ? 'desktop package' : 'web/dev'}
+                </span>
+                {desktopInfo?.updateState.releaseName ? (
+                  <span className="rounded-full bg-primary/10 px-3 py-1.5 text-primary">
+                    Latest release: {desktopInfo.updateState.releaseName}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={checkUpdates}
+                disabled={working || !window.newmakerDesktop}
+                className="h-10 px-4 border border-border rounded-lg flex items-center gap-2 hover:bg-secondary transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${working ? 'animate-spin' : ''}`} />
+                Check updates
+              </button>
+              <button
+                type="button"
+                onClick={downloadUpdate}
+                disabled={working || !desktopInfo?.updateState.available}
+                className="h-10 px-4 border border-border rounded-lg flex items-center gap-2 hover:bg-secondary transition-colors disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                Download update
+              </button>
+              <button
+                type="button"
+                onClick={installUpdate}
+                disabled={working || !desktopInfo?.updateState.downloaded}
+                className="h-10 px-4 bg-primary text-primary-foreground rounded-lg flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
+              >
+                <Sparkles className="w-4 h-4" />
+                Install update
+              </button>
+            </div>
+          </div>
+
+          {updateMessage ? (
+            <div className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm">
+              {updateMessage}
+            </div>
+          ) : null}
+
+          {desktopInfo?.updateState.error ? (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {desktopInfo.updateState.error}
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-border p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-medium">What&apos;s new</h3>
+                <p className="text-sm text-muted-foreground">
+                  Release notes from the latest published desktop version.
+                </p>
+              </div>
+              {desktopInfo?.updateState.releaseDate ? (
+                <span className="text-xs text-muted-foreground">
+                  {new Date(desktopInfo.updateState.releaseDate).toLocaleString()}
+                </span>
+              ) : null}
+            </div>
+
+            {releaseNotes ? (
+              <pre className="mt-4 whitespace-pre-wrap rounded-lg bg-muted/40 p-4 text-sm text-foreground">
+                {releaseNotes}
+              </pre>
+            ) : (
+              <div className="mt-4 rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
+                No downloaded release notes yet. Click <span className="font-medium">Check updates</span> to see what changed in the newest version.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       <section>
         <h2 className="text-xl font-semibold mb-4">Automation Mode</h2>
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
@@ -65,7 +225,6 @@ export function Settings() {
         </div>
       </section>
 
-      {/* Content Sources */}
       <section>
         <h2 className="text-xl font-semibold mb-4">Content Sources</h2>
         <div className="bg-card border border-border rounded-xl p-6">
@@ -107,153 +266,6 @@ export function Settings() {
         </div>
       </section>
 
-      {/* Content Style */}
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Content Style</h2>
-        <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Tone</label>
-            <select className="w-full h-10 px-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
-              <option>Professional</option>
-              <option>Casual</option>
-              <option>Formal</option>
-              <option>Conversational</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Writing Style</label>
-            <select className="w-full h-10 px-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
-              <option>News Reporting</option>
-              <option>Editorial</option>
-              <option>Analysis</option>
-              <option>Opinion</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-2">Length Preference</label>
-            <select className="w-full h-10 px-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
-              <option>Short (100-200 words)</option>
-              <option>Medium (200-400 words)</option>
-              <option>Long (400+ words)</option>
-            </select>
-          </div>
-        </div>
-      </section>
-
-      {/* Language Settings */}
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Language Settings</h2>
-        <div className="bg-card border border-border rounded-xl p-6">
-          <div>
-            <label className="block text-sm font-medium mb-2">Primary Language</label>
-            <select className="w-full h-10 px-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
-              <option>English</option>
-              <option>Spanish</option>
-              <option>French</option>
-              <option>German</option>
-              <option>Portuguese</option>
-            </select>
-          </div>
-
-          <div className="mt-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" className="rounded" />
-              <span className="text-sm">Enable multi-language support</span>
-            </label>
-          </div>
-        </div>
-      </section>
-
-      {/* Platform Settings */}
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Platform Settings</h2>
-        <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-          {[
-            'Twitter',
-            'Facebook Page',
-            'Facebook Profile',
-            'LinkedIn',
-            'Instagram',
-            'Telegram Channel',
-            'WhatsApp',
-            'YouTube Shorts'
-          ].map((platform) => (
-            <div key={platform} className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
-              <div className="flex items-center gap-3">
-                <input type="checkbox" defaultChecked className="rounded" />
-                <span className="font-medium">{platform}</span>
-              </div>
-              <button className="text-sm text-primary hover:underline">
-                Configure
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Approval Rules */}
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Approval Rules</h2>
-        <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" defaultChecked className="rounded" />
-            <span className="text-sm">Require approval for all AI-generated posts</span>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" className="rounded" />
-            <span className="text-sm">Auto-approve posts with high confidence score (&gt;90%)</span>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" defaultChecked className="rounded" />
-            <span className="text-sm">Send notification for pending approvals</span>
-          </label>
-
-          <div className="pt-4 border-t border-border">
-            <label className="block text-sm font-medium mb-2">Approval Timeout</label>
-            <select className="w-full h-10 px-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-ring">
-              <option>24 hours</option>
-              <option>48 hours</option>
-              <option>72 hours</option>
-              <option>1 week</option>
-            </select>
-            <div className="text-xs text-muted-foreground mt-2">
-              Posts older than this will be automatically archived
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Notifications */}
-      <section>
-        <h2 className="text-xl font-semibold mb-4">Notifications</h2>
-        <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" defaultChecked className="rounded" />
-            <span className="text-sm">Email notifications for pending approvals</span>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" defaultChecked className="rounded" />
-            <span className="text-sm">Daily summary email</span>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" className="rounded" />
-            <span className="text-sm">Weekly performance report</span>
-          </label>
-
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" defaultChecked className="rounded" />
-            <span className="text-sm">Alert on low engagement posts</span>
-          </label>
-        </div>
-      </section>
-
-      {/* Save Button */}
       <div className="flex justify-end gap-3 pt-6 border-t border-border">
         <button className="h-10 px-6 border border-border rounded-lg hover:bg-secondary transition-colors">
           Reset to Defaults
