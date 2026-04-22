@@ -23,13 +23,26 @@ function broadcastUpdateState(patch = {}) {
   }
 }
 
+function formatReleaseNotes(releaseNotes) {
+  if (Array.isArray(releaseNotes)) {
+    return releaseNotes
+      .map((entry) => entry.note || "")
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  if (typeof releaseNotes === "string") {
+    return releaseNotes;
+  }
+  return "";
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 940,
     minWidth: 1180,
     minHeight: 760,
-    backgroundColor: "#121212",
+    backgroundColor: "#fafafa",
     autoHideMenuBar: true,
     title: "Newmaker",
     webPreferences: {
@@ -42,12 +55,7 @@ async function createWindow() {
   if (isDev) {
     await mainWindow.loadURL(devServerUrl);
   } else {
-    const indexPath = path.join(app.getAppPath(), "out", "index.html");
-    await mainWindow.loadFile(indexPath);
-  }
-
-  if (isDev) {
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    await mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
   }
 }
 
@@ -60,10 +68,7 @@ function configureAutoUpdater() {
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on("checking-for-update", () => {
-    broadcastUpdateState({
-      checking: true,
-      error: "",
-    });
+    broadcastUpdateState({ checking: true, error: "" });
   });
 
   autoUpdater.on("update-available", (info) => {
@@ -113,27 +118,12 @@ function configureAutoUpdater() {
   });
 }
 
-function formatReleaseNotes(releaseNotes) {
-  if (Array.isArray(releaseNotes)) {
-    return releaseNotes
-      .map((entry) => entry.note || "")
-      .filter(Boolean)
-      .join("\n\n");
-  }
-  if (typeof releaseNotes === "string") {
-    return releaseNotes;
-  }
-  return "";
-}
-
-ipcMain.handle("app-info", async () => {
-  return {
-    isDesktop: true,
-    isPackaged: app.isPackaged,
-    version: app.getVersion(),
-    updateState: lastUpdatePayload,
-  };
-});
+ipcMain.handle("app-info", async () => ({
+  isDesktop: true,
+  isPackaged: app.isPackaged,
+  version: app.getVersion(),
+  updateState: lastUpdatePayload,
+}));
 
 ipcMain.handle("check-for-updates", async () => {
   if (isDev) {
@@ -154,11 +144,7 @@ ipcMain.handle("check-for-updates", async () => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown update error.";
     broadcastUpdateState({ checking: false, error: message });
-    return {
-      ok: false,
-      message,
-      updateState: lastUpdatePayload,
-    };
+    return { ok: false, message, updateState: lastUpdatePayload };
   }
 });
 
@@ -181,11 +167,7 @@ ipcMain.handle("download-update", async () => {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to download update.";
     broadcastUpdateState({ checking: false, error: message });
-    return {
-      ok: false,
-      message,
-      updateState: lastUpdatePayload,
-    };
+    return { ok: false, message, updateState: lastUpdatePayload };
   }
 });
 
@@ -209,16 +191,10 @@ ipcMain.handle("install-update", async () => {
 
   if (choice.response === 0) {
     setImmediate(() => autoUpdater.quitAndInstall());
-    return {
-      ok: true,
-      message: "Installing update now.",
-    };
+    return { ok: true, message: "Installing update now." };
   }
 
-  return {
-    ok: false,
-    message: "Update installation was postponed.",
-  };
+  return { ok: false, message: "Update installation was postponed." };
 });
 
 app.whenReady().then(async () => {
